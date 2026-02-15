@@ -49,6 +49,7 @@ namespace dap
         send_event_ = std::move(sender);
     }
 
+
     std::string dap::read_message(std::istream &in)
     {
         std::string header;

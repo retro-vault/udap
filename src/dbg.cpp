@@ -61,6 +61,12 @@ namespace handlers {
     std::unique_ptr<dap::request_handler> make_read_memory(dbg &ctx);
     std::unique_ptr<dap::request_handler> make_disconnect(dbg &ctx);
     std::unique_ptr<dap::request_handler> make_set_exception_breakpoints(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_pause(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_disassemble(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_set_function_breakpoints(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_breakpoint_locations(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_loaded_sources(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_evaluate(dbg &ctx);
 }
 
 void dbg::register_handlers(dap::dap &dispatcher)
@@ -82,6 +88,12 @@ void dbg::register_handlers(dap::dap &dispatcher)
     dispatcher.add_handler(handlers::make_read_memory(*this));
     dispatcher.add_handler(handlers::make_disconnect(*this));
     dispatcher.add_handler(handlers::make_set_exception_breakpoints(*this));
+    dispatcher.add_handler(handlers::make_pause(*this));
+    dispatcher.add_handler(handlers::make_disassemble(*this));
+    dispatcher.add_handler(handlers::make_set_function_breakpoints(*this));
+    dispatcher.add_handler(handlers::make_breakpoint_locations(*this));
+    dispatcher.add_handler(handlers::make_loaded_sources(*this));
+    dispatcher.add_handler(handlers::make_evaluate(*this));
 }
 
 void dbg::set_event_sender(std::function<void(const std::string &)> sender)
@@ -219,6 +231,29 @@ std::optional<std::string> dbg::lookup_symbol(uint16_t address) const
     if (address > best_addr)
         oss << "+" << (address - best_addr);
     return oss.str();
+}
+
+std::optional<uint16_t> dbg::lookup_function_address(const std::string &name) const
+{
+    // Search MAP symbols: exact match or with _ prefix (SDCC convention).
+    for (const auto &sym : map_symbols_)
+    {
+        if (sym.name == name || sym.name == "_" + name)
+            return static_cast<uint16_t>(sym.address & 0xFFFF);
+    }
+    return std::nullopt;
+}
+
+bool dbg::is_in_segment(uint16_t address) const
+{
+    for (const auto &seg : map_segments_)
+    {
+        uint16_t seg_start = static_cast<uint16_t>(seg.address & 0xFFFF);
+        uint16_t seg_end = static_cast<uint16_t>((seg.address + seg.size) & 0xFFFF);
+        if (seg.size > 0 && address >= seg_start && address < seg_end)
+            return true;
+    }
+    return false;
 }
 
 std::optional<std::string> dbg::resolve_source_path(const std::string &path) const

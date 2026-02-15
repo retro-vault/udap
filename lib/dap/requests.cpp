@@ -145,7 +145,14 @@ namespace dap
     read_memory_request read_memory_request::from(const request &req)
     {
         read_memory_request r = base_copy<read_memory_request>(req);
-        r.memory_reference = req.arguments.value("memoryReference", 0);
+        if (req.arguments.contains("memoryReference"))
+        {
+            auto &ref = req.arguments["memoryReference"];
+            if (ref.is_string())
+                r.memory_reference = static_cast<int>(std::stoul(ref.get<std::string>(), nullptr, 0));
+            else
+                r.memory_reference = ref.get<int>();
+        }
         r.offset = req.arguments.value("offset", 0);
         r.count = req.arguments.value("count", 0);
         return r;
@@ -178,6 +185,47 @@ namespace dap
     {
         set_instruction_breakpoints_request r = base_copy<set_instruction_breakpoints_request>(req);
         r.breakpoints = req.arguments.value("breakpoints", std::vector<json>{});
+        return r;
+    }
+
+    breakpoint_locations_request breakpoint_locations_request::from(const request &req)
+    {
+        breakpoint_locations_request r = base_copy<breakpoint_locations_request>(req);
+        r.source = req.arguments.value("source", json::object());
+        r.line = req.arguments.value("line", 0);
+        r.end_line = req.arguments.value("endLine", 0);
+        if (r.end_line == 0)
+            r.end_line = r.line;
+        return r;
+    }
+
+    set_function_breakpoints_request set_function_breakpoints_request::from(const request &req)
+    {
+        set_function_breakpoints_request r = base_copy<set_function_breakpoints_request>(req);
+        r.breakpoints = req.arguments.value("breakpoints", std::vector<json>{});
+        return r;
+    }
+
+    disassemble_request disassemble_request::from(const request &req)
+    {
+        disassemble_request r = base_copy<disassemble_request>(req);
+        if (req.arguments.contains("memoryReference"))
+        {
+            std::string ref = req.arguments["memoryReference"].get<std::string>();
+            r.memory_reference = static_cast<int>(std::stoul(ref, nullptr, 0));
+        }
+        r.offset = req.arguments.value("offset", 0);
+        r.instruction_offset = req.arguments.value("instructionOffset", 0);
+        r.instruction_count = req.arguments.value("instructionCount", 0);
+        return r;
+    }
+
+    evaluate_request evaluate_request::from(const request &req)
+    {
+        evaluate_request r = base_copy<evaluate_request>(req);
+        r.expression = req.arguments.value("expression", "");
+        r.context = req.arguments.value("context", "");
+        r.frame_id = req.arguments.value("frameId", 0);
         return r;
     }
 

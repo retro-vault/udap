@@ -38,10 +38,8 @@ std::string replace_hex_operands(
 
         if (parsed)
         {
+            // Only replace on exact symbol hits — no fuzzy/nearest matching.
             auto sym = ctx.lookup_symbol_exact(addr);
-            if (!sym)
-                sym = ctx.lookup_symbol(addr);
-
             if (sym)
             {
                 // Keep immediate marker if present in original operand.
@@ -61,8 +59,22 @@ std::string replace_hex_operands(
     return out;
 }
 
+// Check if a Z80 mnemonic is an 8-bit immediate load (LD r8,#nn).
+bool is_ld_r8_imm(const std::string &line)
+{
+    // z80ex disassembles these as e.g. "LD A,#xx", "LD B,#xx", "LD (HL),#xx"
+    static const std::regex re(
+        R"(LD\s+(?:[A-E]|H|L|IXH|IXL|IYH|IYL|\([A-Z]+(?:[+-][0-9]+)?\))\s*,\s*#)",
+        std::regex::icase);
+    return std::regex_search(line, re);
+}
+
 std::string symbolize_disassembly(const std::string &line, dbg &ctx)
 {
+    // Don't symbolize 8-bit immediates — they're never addresses.
+    if (is_ld_r8_imm(line))
+        return line;
+
     // Cover the most common operand styles emitted by the disassembler:
     // 0x1234, $1234, 1234h
     static const std::regex r_0x(R"(0x([0-9A-Fa-f]{1,4}))");

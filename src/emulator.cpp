@@ -47,6 +47,15 @@ dbg::dbg()
         intread_cb, this);
 }
 
+int dbg::step_instruction()
+{
+    int total_tstates = 0;
+    do {
+        total_tstates += z80ex_step(cpu_);
+    } while (z80ex_last_op_type(cpu_) != 0);
+    return total_tstates;
+}
+
 dbg::~dbg()
 {
     if (cpu_)

@@ -31,7 +31,7 @@ public:
                 stopped_event["type"] = "event";
                 stopped_event["event"] = "stopped";
                 stopped_event["body"] = {
-                    {"reason", "entry"},
+                    {"reason", "step"},
                     {"threadId", 1},
                     {"allThreadsStopped", true}};
                 ctx_.send_event(stopped_event.dump()); })

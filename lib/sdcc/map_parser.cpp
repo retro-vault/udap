@@ -23,10 +23,16 @@ std::optional<map_info> map_parser::parse(const std::string& path)
     const std::regex segment_re(
         R"(^\s*([A-Za-z0-9_.\$]+)\s+((?:0[xX])?[0-9A-Fa-f]{4,8})\s+((?:0[xX])?[0-9A-Fa-f]{4,8}).*\(([^)]*)\)\s*$)");
 
-    // Example:
-    // 00000116  C$clock.c$18$0_0$36                clock
+    // Single-column format (older/larger MAP files):
+    //   00000116  C$clock.c$18$0_0$36                clock
     const std::regex symbol_re(
         R"(^\s*((?:0[xX])?[0-9A-Fa-f]{4,8})\s+([^\s]+)(?:\s+([^\s]+))?\s*$)");
+
+    // Multi-column format (newer sdld):
+    //   0000802E  _cclear   |    0000803A  _cinit    |    00008044  _cputc
+    // Each column: hex_address  symbol_name
+    const std::regex column_sym_re(
+        R"(\s*((?:0[xX])?[0-9A-Fa-f]{4,8})\s+([^\s|]+))");
 
     for (const auto& raw : *lines)
     {
@@ -50,6 +56,7 @@ std::optional<map_info> map_parser::parse(const std::string& path)
             catch (...) {}
         }
 
+        // Try single-column format first.
         if (auto sym = util::match(trimmed, symbol_re))
         {
             // Skip table headings.
@@ -67,6 +74,31 @@ std::optional<map_info> map_parser::parse(const std::string& path)
                 continue;
             }
             catch (...) {}
+        }
+
+        // Try multi-column format (columns separated by '|').
+        if (line.find('|') != std::string::npos)
+        {
+            auto it = std::sregex_iterator(line.begin(), line.end(), column_sym_re);
+            auto end = std::sregex_iterator();
+            for (; it != end; ++it)
+            {
+                try
+                {
+                    std::string addr_str = (*it)[1].str();
+                    std::string name_str = (*it)[2].str();
+                    if (addr_str == "Value" || name_str == "Global"
+                        || name_str == "------")
+                        continue;
+                    symbol s;
+                    s.address = static_cast<uint32_t>(
+                        std::stoul(addr_str, nullptr, 16));
+                    s.name = name_str;
+                    s.bank = 0;
+                    data_.symbols.push_back(std::move(s));
+                }
+                catch (...) {}
+            }
         }
     }
 

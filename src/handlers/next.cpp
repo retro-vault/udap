@@ -20,12 +20,22 @@ public:
         auto start_loc = ctx_.lookup_source(start_pc);
 
         // Source-level step when source mapping exists.
+        // Track SP to implement step-over: when SP < start_sp we are
+        // inside a called function and must keep stepping until we
+        // return to (or above) the original stack level.
         if (start_loc)
         {
-            for (int i = 0; i < 100000; ++i)
+            uint16_t start_sp = z80ex_get_reg(ctx_.cpu(), regSP);
+            for (int i = 0; i < 500000; ++i)
             {
-                z80ex_step(ctx_.cpu());
+                ctx_.step_instruction();
                 uint16_t pc = z80ex_get_reg(ctx_.cpu(), regPC);
+                uint16_t sp = z80ex_get_reg(ctx_.cpu(), regSP);
+
+                // Still inside a called function — keep stepping.
+                if (sp < start_sp)
+                    continue;
+
                 auto loc = ctx_.lookup_source(pc);
                 if (!loc)
                     continue;
@@ -36,7 +46,7 @@ public:
         else
         {
             // Pure disassembly context: single instruction step.
-            z80ex_step(ctx_.cpu());
+            ctx_.step_instruction();
         }
 
         dap::response resp(r.seq, r.command);

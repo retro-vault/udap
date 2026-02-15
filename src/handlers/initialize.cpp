@@ -17,13 +17,18 @@ public:
     {
         auto r = dap::initialize_request::from(req);
 
-        // Send the "initialized" event asynchronously.
-        nlohmann::json ev;
-        ev["type"] = "event";
-        ev["seq"] = ctx_.next_event_seq();
-        ev["event"] = "initialized";
-        ev["body"] = nlohmann::json::object();
-        ctx_.send_event(ev.dump());
+        // Send the "initialized" event AFTER the response is returned.
+        // DAP protocol requires: response first, then event.
+        std::thread([this]()
+                    {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            nlohmann::json ev;
+            ev["type"] = "event";
+            ev["seq"] = ctx_.next_event_seq();
+            ev["event"] = "initialized";
+            ev["body"] = nlohmann::json::object();
+            ctx_.send_event(ev.dump()); })
+            .detach();
 
         // Return the capabilities response.
         dap::response resp(r.seq, r.command);
@@ -33,12 +38,15 @@ public:
                      {"supportsBreakpointLocationsRequest", true},
                      {"supportsInstructionBreakpoints", true},
                      {"supportsLoadedSourcesRequest", true},
+                     {"supportsDisassembleRequest", true},
+                     {"supportsFunctionBreakpoints", true},
                      {"supportsStepBack", false},
                      {"supportsRestartFrame", false},
-                     {"supportsEvaluateForHovers", false},
+                     {"supportsEvaluateForHovers", true},
                      {"supportsSetVariable", false},
                      {"supportsTerminateDebuggee", false},
-                     {"supportsMemoryReferences", true}})
+                     {"supportsMemoryReferences", true},
+                     {"supportsReadMemoryRequest", true}})
             .str();
     }
 

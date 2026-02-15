@@ -16,17 +16,25 @@ public:
     std::string handle(const dap::request &req) override
     {
         auto r = dap::step_out_request::from(req);
-        z80ex_step(ctx_.cpu());
+        ctx_.step_instruction();
 
         dap::response resp(r.seq, r.command);
         resp.success(true);
 
-        nlohmann::json j{
-            {"seq", ctx_.next_event_seq()},
-            {"type", "event"},
-            {"event", "stopped"},
-            {"body", {{"reason", "step"}, {"threadId", 1}, {"allThreadsStopped", true}}}};
-        ctx_.send_event(j.dump());
+        // Send stopped event AFTER the response (DAP protocol requirement).
+        std::thread([this]()
+                    {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            nlohmann::json j;
+            j["seq"] = ctx_.next_event_seq();
+            j["type"] = "event";
+            j["event"] = "stopped";
+            j["body"] = {
+                {"reason", "step"},
+                {"threadId", 1},
+                {"allThreadsStopped", true}};
+            ctx_.send_event(j.dump()); })
+            .detach();
 
         return resp.str();
     }

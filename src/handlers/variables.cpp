@@ -28,15 +28,26 @@ public:
         }
         else if (r.variables_reference == 101)
         {
-#define Z80REG(name, regid, width)                                          \
+            // 16-bit register pairs that can be used as pointers get memoryReference.
+#define Z80REG(rname, regid, width)                                         \
     {                                                                       \
         nlohmann::json v;                                                   \
-        v["name"] = #name;                                                  \
+        v["name"] = #rname;                                                 \
+        uint16_t val = z80ex_get_reg(ctx_.cpu(), regid);                    \
+        v["value"] = ctx_.format_hex(val, width);                           \
+        v["variablesReference"] = 0;                                        \
+        v["memoryReference"] = ctx_.format_hex(val, 4);                     \
+        vars.push_back(v);                                                  \
+    }
+#define Z80REG_NOMEM(rname, regid, width)                                   \
+    {                                                                       \
+        nlohmann::json v;                                                   \
+        v["name"] = #rname;                                                 \
         v["value"] = ctx_.format_hex(z80ex_get_reg(ctx_.cpu(), regid), width); \
         v["variablesReference"] = 0;                                        \
         vars.push_back(v);                                                  \
     }
-            Z80REG(AF, regAF, 4)
+            Z80REG_NOMEM(AF, regAF, 4)
             Z80REG(BC, regBC, 4)
             Z80REG(DE, regDE, 4)
             Z80REG(HL, regHL, 4)
@@ -44,9 +55,10 @@ public:
             Z80REG(IY, regIY, 4)
             Z80REG(SP, regSP, 4)
             Z80REG(PC, regPC, 4)
-            Z80REG(R, regR, 2)
-            Z80REG(I, regI, 2)
+            Z80REG_NOMEM(R, regR, 2)
+            Z80REG_NOMEM(I, regI, 2)
 #undef Z80REG
+#undef Z80REG_NOMEM
 
             vars.push_back({{"name", "F"},
                             {"value", ctx_.format_hex(
@@ -70,13 +82,15 @@ public:
         {
             for (const auto &seg : ctx_.map_segments())
             {
+                uint16_t addr = static_cast<uint16_t>(seg.address & 0xFFFF);
                 vars.push_back({
                     {"name", seg.name},
                     {"value",
-                     "addr=" + ctx_.format_hex(static_cast<uint16_t>(seg.address & 0xFFFF), 4) +
+                     "addr=" + ctx_.format_hex(addr, 4) +
                          ", size=" + ctx_.format_hex(static_cast<uint16_t>(seg.size & 0xFFFF), 4) +
                          ", " + seg.attributes},
                     {"variablesReference", 0},
+                    {"memoryReference", ctx_.format_hex(addr, 4)},
                 });
             }
         }
@@ -84,10 +98,12 @@ public:
         {
             for (const auto &sym : ctx_.map_symbols())
             {
+                uint16_t addr = static_cast<uint16_t>(sym.address & 0xFFFF);
                 vars.push_back({
                     {"name", sym.name},
-                    {"value", ctx_.format_hex(static_cast<uint16_t>(sym.address & 0xFFFF), 4)},
+                    {"value", ctx_.format_hex(addr, 4)},
                     {"variablesReference", 0},
+                    {"memoryReference", ctx_.format_hex(addr, 4)},
                 });
             }
         }

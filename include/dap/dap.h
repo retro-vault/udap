@@ -154,6 +154,24 @@ namespace dap
         static disassemble_request from(const request &req);
     };
 
+    // Breakpoint locations. Find valid breakpoint positions.
+    struct breakpoint_locations_request : public request
+    {
+        json source;
+        int line = 0;
+        int end_line = 0;
+
+        static breakpoint_locations_request from(const request &req);
+    };
+
+    // Set function breakpoints. Break on function entry.
+    struct set_function_breakpoints_request : public request
+    {
+        std::vector<json> breakpoints;
+
+        static set_function_breakpoints_request from(const request &req);
+    };
+
     // Set instruction breakpoints. Break on address.
     struct set_instruction_breakpoints_request : public request
     {
@@ -186,6 +204,16 @@ namespace dap
         std::string granularity;
 
         static step_out_request from(const request &req);
+    };
+
+    // Evaluate expression. Used by Watch panel and debug console.
+    struct evaluate_request : public request
+    {
+        std::string expression;
+        std::string context; // "watch", "repl", "hover"
+        int frame_id = 0;
+
+        static evaluate_request from(const request &req);
     };
 
     // Response generator.

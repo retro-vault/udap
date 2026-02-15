@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <optional>
 #include <unordered_map>
+#include <atomic>
 
 #include <nlohmann/json.hpp>
 #include <sdcc/cdbg_info.h>
@@ -56,12 +57,19 @@ public:
     void set_event_sender(std::function<void(const std::string &)> sender);
     void send_event(const std::string &event_json);
 
+    // Execute one complete Z80 instruction (handles DD/FD/CB/ED prefixes).
+    int step_instruction();
+
     // Accessors for handler classes.
     Z80EX_CONTEXT *cpu() { return cpu_; }
     std::vector<uint8_t> &memory() { return memory_; }
     const std::vector<uint8_t> &memory() const { return memory_; }
     std::vector<uint16_t> &breakpoints() { return breakpoints_; }
     std::vector<uint16_t> &instruction_breakpoints() { return instruction_breakpoints_; }
+    std::vector<uint16_t> &function_breakpoints() { return function_breakpoints_; }
+    void request_pause() { pause_requested_.store(true); }
+    void clear_pause() { pause_requested_.store(false); }
+    bool pause_requested() const { return pause_requested_.load(); }
     int next_event_seq() { return event_seq_++; }
     bool launched() const { return launched_; }
     void set_launched(bool v) { launched_ = v; }
@@ -89,6 +97,8 @@ public:
     std::optional<uint16_t> lookup_address(const std::string &file, int line) const;
     std::optional<std::string> lookup_symbol_exact(uint16_t address) const;
     std::optional<std::string> lookup_symbol(uint16_t address) const;
+    std::optional<uint16_t> lookup_function_address(const std::string &name) const;
+    bool is_in_segment(uint16_t address) const;
     std::optional<std::string> resolve_source_path(const std::string &path) const;
     void set_source_breakpoints_for_file(const std::string &file,
                                          std::vector<int> lines);
@@ -111,6 +121,8 @@ private:
     std::vector<uint8_t> memory_;
     std::vector<uint16_t> breakpoints_;
     std::vector<uint16_t> instruction_breakpoints_;
+    std::vector<uint16_t> function_breakpoints_;
+    std::atomic<bool> pause_requested_{false};
     int event_seq_;
     bool launched_;
     bool pending_entry_stop_ = false;

@@ -25,16 +25,22 @@ public:
         if (src)
         {
             std::string name = std::filesystem::path(src->file).filename().string();
-            int source_ref = ctx_.ensure_source_reference(src->file, "text/x-c");
             nlohmann::json source = {
                 {"name", name},
                 {"presentationHint", "normal"}};
-            if (source_ref > 0)
-                source["sourceReference"] = source_ref;
-            else
+            // If the file exists on disk, always use path so VSCode opens
+            // the real file (editable, breakpoints work).  Only fall back
+            // to sourceReference for files that can't be found.
+            if (std::filesystem::exists(src->file))
             {
                 source["path"] = src->file;
                 source["sourceReference"] = 0;
+            }
+            else
+            {
+                int source_ref = ctx_.ensure_source_reference(src->file, "text/x-c");
+                if (source_ref > 0)
+                    source["sourceReference"] = source_ref;
             }
 
             frame = {
