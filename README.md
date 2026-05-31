@@ -1,8 +1,8 @@
 ![status.badge] [![language.badge]][language.url] [![standard.badge]][standard.url] [![license.badge]][license.url]
 
-# μDAP (mudap)
+# μDAP (udap)
 
-`μDAP (mudap)` is a cross-debugging toolchain for Z80 programs, designed for integration with Visual Studio Code on Linux. It implements the Microsoft Debug Adapter Protocol (DAP) and serves as both a lightweight emulator backend and a debug adapter frontend.
+`μDAP (udap)` is a cross-debugging toolchain for Z80 programs, designed for integration with Visual Studio Code on Linux. It implements the Microsoft Debug Adapter Protocol (DAP) and serves as both a lightweight emulator backend and a debug adapter frontend.
 
  > This project is used by the [mavrica](https://github.com/iskra-delta/mavrica)
    project (located in the same GitHub root), which uses a Z80 just-in-time (JIT) compilation core to emulate a Z80 system. `μDAP (mudap)` enables debugging of such emulators directly from VSCode.
