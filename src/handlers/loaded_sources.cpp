@@ -11,9 +11,9 @@
 
 namespace handlers {
 
-class loaded_sources_handler : public dap::request_handler {
+class loaded_sources_handler : public dbg_handler {
 public:
-    loaded_sources_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "loadedSources"; }
 
     std::string handle(const dap::request &req) override
@@ -60,12 +60,11 @@ private:
         sources.push_back(src);
     }
 
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_loaded_sources(dbg &ctx)
 {
-    return std::make_unique<loaded_sources_handler>(ctx);
+    return make_handler<loaded_sources_handler>(ctx);
 }
 
 } // namespace handlers

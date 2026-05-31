@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class threads_handler : public dap::request_handler {
+class threads_handler : public dbg_handler {
 public:
-    threads_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "threads"; }
 
     std::string handle(const dap::request &req) override
@@ -22,12 +22,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_threads(dbg &ctx)
 {
-    return std::make_unique<threads_handler>(ctx);
+    return make_handler<threads_handler>(ctx);
 }
 
 } // namespace handlers

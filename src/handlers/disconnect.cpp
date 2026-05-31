@@ -8,26 +8,25 @@
 
 namespace handlers {
 
-class disconnect_handler : public dap::request_handler {
+class disconnect_handler : public dbg_handler {
 public:
-    disconnect_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "disconnect"; }
 
     std::string handle(const dap::request &req) override
     {
         ctx_.set_launched(false);
-
+        ctx_.stop_emulation(); // ensures background thread exits cleanly
         dap::response resp(req.seq, req.command);
         return resp.success(true).result({}).str();
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_disconnect(dbg &ctx)
 {
-    return std::make_unique<disconnect_handler>(ctx);
+    return make_handler<disconnect_handler>(ctx);
 }
 
 } // namespace handlers

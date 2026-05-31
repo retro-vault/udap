@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class set_instruction_breakpoints_handler : public dap::request_handler {
+class set_instruction_breakpoints_handler : public dbg_handler {
 public:
-    set_instruction_breakpoints_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "setInstructionBreakpoints"; }
 
     std::string handle(const dap::request &req) override
@@ -18,22 +18,20 @@ public:
         auto r = dap::set_instruction_breakpoints_request::from(req);
 
         ctx_.instruction_breakpoints().clear();
-        for (const auto &bp : r.breakpoints)
-        {
-            if (bp.contains("instructionReference"))
-            {
-                std::string addr_str = bp["instructionReference"];
-                uint16_t addr = std::stoul(addr_str, nullptr, 16);
+        for (const auto &bp : r.breakpoints) {
+            if (!bp.contains("instructionReference")) continue;
+            try {
+                uint16_t addr = static_cast<uint16_t>(
+                    std::stoul(bp["instructionReference"].get<std::string>(), nullptr, 0));
                 ctx_.instruction_breakpoints().push_back(addr);
-            }
+            } catch (...) {}
         }
+        ctx_.rebuild_all_breakpoints();
 
         std::vector<nlohmann::json> breakpoints;
         for (uint16_t addr : ctx_.instruction_breakpoints())
-        {
             breakpoints.push_back({{"verified", true},
-                                   {"instructionReference", ctx_.format_hex(addr, 4)}});
-        }
+                                   {"instructionReference", dbg::format_hex(addr, 4)}});
 
         dap::response resp(r.seq, r.command);
         resp.success(true).result({{"breakpoints", breakpoints}});
@@ -41,12 +39,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_set_instruction_breakpoints(dbg &ctx)
 {
-    return std::make_unique<set_instruction_breakpoints_handler>(ctx);
+    return make_handler<set_instruction_breakpoints_handler>(ctx);
 }
 
 } // namespace handlers

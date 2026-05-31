@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class set_function_breakpoints_handler : public dap::request_handler {
+class set_function_breakpoints_handler : public dbg_handler {
 public:
-    set_function_breakpoints_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "setFunctionBreakpoints"; }
 
     std::string handle(const dap::request &req) override
@@ -20,24 +20,19 @@ public:
         ctx_.function_breakpoints().clear();
         nlohmann::json results = nlohmann::json::array();
 
-        for (const auto &bp : r.breakpoints)
-        {
+        for (const auto &bp : r.breakpoints) {
             std::string name = bp.value("name", "");
             auto addr = ctx_.lookup_function_address(name);
-            if (addr)
-            {
+            if (addr) {
                 ctx_.function_breakpoints().push_back(*addr);
-                results.push_back({
-                    {"verified", true},
-                    {"instructionReference", ctx_.format_hex(*addr, 4)}});
-            }
-            else
-            {
-                results.push_back({
-                    {"verified", false},
-                    {"message", "Function not found: " + name}});
+                results.push_back({{"verified", true},
+                                   {"instructionReference", dbg::format_hex(*addr, 4)}});
+            } else {
+                results.push_back({{"verified", false},
+                                   {"message", "Function not found: " + name}});
             }
         }
+        ctx_.rebuild_all_breakpoints();
 
         dap::response resp(r.seq, r.command);
         resp.success(true).result({{"breakpoints", results}});
@@ -45,12 +40,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_set_function_breakpoints(dbg &ctx)
 {
-    return std::make_unique<set_function_breakpoints_handler>(ctx);
+    return make_handler<set_function_breakpoints_handler>(ctx);
 }
 
 } // namespace handlers

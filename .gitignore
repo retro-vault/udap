@@ -1,21 +1,8 @@
+# Compilation artifacts.
 lab/
 build/
-bin/
-_deps/
-Testing/
 
-# CMake generated files/directories
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-CTestTestfile.cmake
-Makefile
-compile_commands.json
-**/CMakeFiles/
-**/cmake_install.cmake
-**/CTestTestfile.cmake
-**/Makefile
-**/*_tests.cmake
-**/*_include.cmake
-
+# AI.
 .claude/
+.codex/
+.agents/

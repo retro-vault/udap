@@ -1,6 +1,6 @@
 set(EXT_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(EXT_BUILD_DIR "${CMAKE_BINARY_DIR}/ext")
-set(EXT_VSIX "${CMAKE_SOURCE_DIR}/bin/mudap.vsix")
+set(EXT_VSIX "${CMAKE_SOURCE_DIR}/bin/udap.vsix")
 
 # List source files required for VS Code extension packaging.
 set(EXT_FILES

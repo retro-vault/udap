@@ -6,15 +6,16 @@
 #include <iomanip>
 #include <vector>
 
+#include <z80ex_dasm.h>
 #include <dap/dap.h>
 #include <dap/handler.h>
 #include <dbg.h>
 
 namespace handlers {
 
-class disassemble_handler : public dap::request_handler {
+class disassemble_handler : public dbg_handler {
 public:
-    disassemble_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "disassemble"; }
 
     std::string handle(const dap::request &req) override
@@ -118,12 +119,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_disassemble(dbg &ctx)
 {
-    return std::make_unique<disassemble_handler>(ctx);
+    return make_handler<disassemble_handler>(ctx);
 }
 
 } // namespace handlers

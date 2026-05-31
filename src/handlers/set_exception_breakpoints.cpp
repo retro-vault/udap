@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class set_exception_breakpoints_handler : public dap::request_handler {
+class set_exception_breakpoints_handler : public dbg_handler {
 public:
-    set_exception_breakpoints_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "setExceptionBreakpoints"; }
 
     std::string handle(const dap::request &req) override
@@ -18,14 +18,11 @@ public:
         dap::response resp(req.seq, req.command);
         return resp.success(true).result({}).str();
     }
-
-private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_set_exception_breakpoints(dbg &ctx)
 {
-    return std::make_unique<set_exception_breakpoints_handler>(ctx);
+    return make_handler<set_exception_breakpoints_handler>(ctx);
 }
 
 } // namespace handlers

@@ -1,11 +1,11 @@
 {
-  "name": "mudap-debug",
-  "displayName": "µdap Debugger",
+  "name": "udap-debug",
+  "displayName": "μDAP Debugger",
   "description": "Debug adapter for micros.",
   "version": "0.0.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/retro-vault/mudap"
+    "url": "https://github.com/retro-vault/udap"
   },
   "engines": {
     "vscode": "^1.88.0"
@@ -20,8 +20,8 @@
   "contributes": {
     "debuggers": [
       {
-        "type": "mudap",
-        "label": "µdap Debugger",
+        "type": "udap",
+        "label": "μDAP Debugger",
         "configurationAttributes": {
           "launch": {
             "required": ["program"],

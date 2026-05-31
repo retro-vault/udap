@@ -11,9 +11,9 @@
 
 namespace handlers {
 
-class breakpoint_locations_handler : public dap::request_handler {
+class breakpoint_locations_handler : public dbg_handler {
 public:
-    breakpoint_locations_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "breakpointLocations"; }
 
     std::string handle(const dap::request &req) override
@@ -28,47 +28,22 @@ public:
             source_path = r.source["name"].get<std::string>();
 
         std::string query_name = fs::path(source_path).filename().string();
-
         std::set<int> valid_lines;
 
-        // Search CDB modules for lines with addresses in the requested range.
-        for (const auto &mod : ctx_.cdb_modules())
-        {
-            for (const auto &ln : mod.lines)
-            {
-                if (ln.line < r.line || ln.line > r.end_line)
-                    continue;
-                std::string cdb_name = fs::path(ln.file).filename().string();
-                if (cdb_name == query_name)
+        for (const auto &mod : ctx_.cdb_modules()) {
+            for (const auto &ln : mod.lines) {
+                if (ln.line < r.line || ln.line > r.end_line) continue;
+                if (fs::path(ln.file).filename().string() == query_name)
                     valid_lines.insert(ln.line);
             }
         }
 
-        // Fallback: MAP symbols with C$file$line$... pattern.
-        for (const auto &sym : ctx_.map_symbols())
-        {
-            if (sym.name.size() < 4 || sym.name[0] != 'C' || sym.name[1] != '$')
-                continue;
-            size_t p1 = sym.name.find('$', 2);
-            if (p1 == std::string::npos)
-                continue;
-            size_t p2 = sym.name.find('$', p1 + 1);
-            if (p2 == std::string::npos)
-                continue;
-            std::string file = sym.name.substr(2, p1 - 2);
-            int line = 0;
-            try
-            {
-                line = std::stoi(sym.name.substr(p1 + 1, p2 - p1 - 1));
-            }
-            catch (...)
-            {
-                continue;
-            }
-            if (line < r.line || line > r.end_line)
-                continue;
-            if (fs::path(file).filename().string() == query_name)
-                valid_lines.insert(line);
+        // Fallback: MAP symbols via dbg::map_symbol_to_source (no duplication).
+        for (const auto &sym : ctx_.map_symbols()) {
+            auto loc = ctx_.map_symbol_to_source(sym);
+            if (!loc || loc->line < r.line || loc->line > r.end_line) continue;
+            if (fs::path(loc->file).filename().string() == query_name)
+                valid_lines.insert(loc->line);
         }
 
         nlohmann::json locations = nlohmann::json::array();
@@ -81,12 +56,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_breakpoint_locations(dbg &ctx)
 {
-    return std::make_unique<breakpoint_locations_handler>(ctx);
+    return make_handler<breakpoint_locations_handler>(ctx);
 }
 
 } // namespace handlers

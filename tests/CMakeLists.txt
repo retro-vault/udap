@@ -10,14 +10,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# Automatically collect all .cpp files in this folder
-file(GLOB TEST_SOURCES CONFIGURE_DEPENDS *.cpp)
+# Collect all test source files (both .cpp and .cxx)
+file(GLOB TEST_SOURCES CONFIGURE_DEPENDS *.cpp *.cxx)
 
 # Define the test executable
-add_executable(mudap-tests ${TEST_SOURCES})
+add_executable(udap-tests ${TEST_SOURCES})
 
 # Link with GoogleTest's main runner
-target_link_libraries(mudap-tests
+target_link_libraries(udap-tests
     PRIVATE
         gtest_main
         dap
@@ -26,6 +26,6 @@ target_link_libraries(mudap-tests
 
 # Discover and register the tests for `ctest`
 include(GoogleTest)
-gtest_discover_tests(mudap-tests
+gtest_discover_tests(udap-tests
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )

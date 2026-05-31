@@ -2,10 +2,12 @@
 //
 // Copyright 2025 Tomaz Stih. All rights reserved.
 // MIT License.
+#include <fstream>
+#include <sstream>
+#include <regex>
 #include <dap/dap.h>
 #include <dap/handler.h>
 #include <dbg.h>
-#include <regex>
 
 namespace handlers {
 
@@ -91,9 +93,9 @@ std::string symbolize_disassembly(const std::string &line, dbg &ctx)
 
 } // namespace
 
-class source_handler : public dap::request_handler {
+class source_handler : public dbg_handler {
 public:
-    source_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "source"; }
 
     std::string handle(const dap::request &req) override
@@ -142,54 +144,24 @@ public:
             return resp.str();
         }
 
-        std::ostringstream oss;
-        char dasm_buf[64];
-        uint32_t addr = z80ex_get_reg(ctx_.cpu(), regPC);
-
-        auto &mem = ctx_.memory();
-        for (int i = 0; i < 256 && addr < mem.size();)
-        {
-            int ts1 = 0, ts2 = 0;
-            int ilen = z80ex_dasm(
-                dasm_buf, sizeof(dasm_buf), 0, &ts1, &ts2,
-                dbg::dasm_readbyte_cb, addr, &mem);
-
-            oss << "      " << std::uppercase << std::setfill('0')
-                << std::setw(6) << std::hex << addr << " ";
-
-            int opcode_chars = 0;
-            for (int j = 0; j < ilen && (addr + j) < mem.size(); ++j)
-            {
-                oss << std::setw(2) << std::setfill('0') << std::hex
-                    << (int)mem[addr + j] << " ";
-                opcode_chars += 3;
-            }
-            for (; opcode_chars < 8; ++opcode_chars)
-                oss << " ";
-
-            oss << std::string(26 - (6 + 6 + 1 + opcode_chars), ' ');
-            oss << "[" << std::right << std::setw(2) << std::dec << ts1 << "]";
-            oss << "   ";
-            oss << symbolize_disassembly(dasm_buf, ctx_) << "\n";
-
-            addr += (ilen > 0) ? ilen : 1;
-            ++i;
-        }
+        // The full 64 KB listing is built once at launch and served verbatim
+        // on every request.  The sourceReference stays fixed; only the line
+        // number in the stack frame changes to follow the PC.
+        if (!ctx_.has_full_listing())
+            ctx_.build_full_listing(); // safety fallback (should already be built)
 
         dap::response resp(r.seq, r.command);
-        resp.success(true)
-            .result({{"content", oss.str()},
-                     {"mimeType", "text/x-asm"}});
+        resp.success(true).result({{"content",  ctx_.full_listing_content()},
+                                   {"mimeType", "text/x-asm"}});
         return resp.str();
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_source(dbg &ctx)
 {
-    return std::make_unique<source_handler>(ctx);
+    return make_handler<source_handler>(ctx);
 }
 
 } // namespace handlers

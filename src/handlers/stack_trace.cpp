@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class stack_trace_handler : public dap::request_handler {
+class stack_trace_handler : public dbg_handler {
 public:
-    stack_trace_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "stackTrace"; }
 
     std::string handle(const dap::request &req) override
@@ -54,12 +54,12 @@ public:
         }
         else
         {
-            // Fall back to virtual disassembly listing.
-            // Increment the sourceReference so VSCode re-fetches the
-            // content (which starts from the current PC).
-            int source_ref = ctx_.virtual_lst_source_reference() + 1;
-            ctx_.set_virtual_lst_source_reference(source_ref);
-            auto sym = ctx_.lookup_symbol(pc);
+            // Fall back to the full 64 KB virtual disassembly listing.
+            // The sourceReference is fixed for the whole session; VSCode
+            // reuses the cached content and only moves the cursor to pc_line.
+            int  source_ref = ctx_.virtual_lst_source_reference();
+            int  pc_line    = ctx_.full_listing_line_for_addr(pc);
+            auto sym        = ctx_.lookup_symbol(pc);
 
             frame = {
                 {"id", 1},
@@ -69,9 +69,9 @@ public:
                 {"source",
                  {{"name", "z80.s"},
                   {"sourceReference", source_ref},
-                  {"presentationHint", "deemphasize"},
+                  {"presentationHint", "normal"},
                   {"mimeType", "text/x-asm"}}},
-                {"line", 1},
+                {"line",   pc_line},
                 {"column", 1}};
         }
 
@@ -82,12 +82,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_stack_trace(dbg &ctx)
 {
-    return std::make_unique<stack_trace_handler>(ctx);
+    return make_handler<stack_trace_handler>(ctx);
 }
 
 } // namespace handlers

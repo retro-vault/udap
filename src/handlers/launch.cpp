@@ -2,6 +2,8 @@
 //
 // Copyright 2025 Tomaz Stih. All rights reserved.
 // MIT License.
+#include <fstream>
+#include <filesystem>
 #include <dap/dap.h>
 #include <dap/handler.h>
 #include <sdcc/cdb_parser.h>
@@ -156,9 +158,9 @@ ihx_load_result load_ihx(std::istream &in, std::vector<uint8_t> &mem)
 
 namespace handlers {
 
-class launch_handler : public dap::request_handler {
+class launch_handler : public dbg_handler {
 public:
-    launch_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "launch"; }
 
     std::string handle(const dap::request &req) override
@@ -183,9 +185,9 @@ public:
             entry_reason = "from launch startAddress";
         }
 
-        if (r.arguments.contains("program"))
+        if (!r.program.empty())
         {
-            std::string bin_path = r.arguments["program"];
+            std::string bin_path = r.program;
             std::string ext;
             try { ext = std::filesystem::path(bin_path).extension().string(); }
             catch (...) {}
@@ -218,14 +220,10 @@ public:
                 std::cerr << "[launch] ERROR: Cannot open program file: " << bin_path << std::endl;
             }
 
-            // Try to load CDB for C source mapping.
             namespace fs = std::filesystem;
-            fs::path cdb_path;
-            if (r.arguments.contains("cdbFile") &&
-                r.arguments["cdbFile"].is_string())
-                cdb_path = r.arguments["cdbFile"].get<std::string>();
-            else
-                cdb_path = fs::path(bin_path).replace_extension(".cdb");
+            fs::path cdb_path = r.cdb_file.empty()
+                ? fs::path(bin_path).replace_extension(".cdb")
+                : fs::path(r.cdb_file);
 
             if (fs::exists(cdb_path))
             {
@@ -246,13 +244,9 @@ public:
             else
                 std::cerr << "[launch] No CDB file found at: " << cdb_path.string() << std::endl;
 
-            // Try to load MAP for symbols/segments and C$ file/line fallback.
-            fs::path map_path;
-            if (r.arguments.contains("mapFile") &&
-                r.arguments["mapFile"].is_string())
-                map_path = r.arguments["mapFile"].get<std::string>();
-            else
-                map_path = fs::path(bin_path).replace_extension(".map");
+            fs::path map_path = r.map_file.empty()
+                ? fs::path(bin_path).replace_extension(".map")
+                : fs::path(r.map_file);
 
             if (fs::exists(map_path))
             {
@@ -273,30 +267,17 @@ public:
                 std::cerr << "[launch] No MAP file found at: " << map_path.string() << std::endl;
 
             // Determine source root for resolving relative paths in CDB.
-            if (r.arguments.contains("sourceRoot"))
-                ctx_.set_source_root(r.arguments["sourceRoot"].get<std::string>());
-            else
-                ctx_.set_source_root(fs::path(bin_path).parent_path().string());
+            std::string source_root = r.arguments.value("sourceRoot", "");
+            ctx_.set_source_root(source_root.empty()
+                ? fs::path(bin_path).parent_path().string()
+                : source_root);
 
-            // Optional adapter-specific launch arguments:
-            // "sourceRoots": ["/path/a", "/path/b", ...]
-            // "includeRoots": ["/path/inc1", "/path/inc2", ...]
             std::vector<std::string> roots;
-            if (r.arguments.contains("sourceRoots") && r.arguments["sourceRoots"].is_array())
-            {
-                for (const auto &item : r.arguments["sourceRoots"])
-                {
-                    if (item.is_string())
-                        roots.push_back(item.get<std::string>());
-                }
-            }
-            if (r.arguments.contains("includeRoots") && r.arguments["includeRoots"].is_array())
-            {
-                for (const auto &item : r.arguments["includeRoots"])
-                {
-                    if (item.is_string())
-                        roots.push_back(item.get<std::string>());
-                }
+            for (const auto &key : {"sourceRoots", "includeRoots"}) {
+                if (r.arguments.contains(key) && r.arguments[key].is_array())
+                    for (const auto &item : r.arguments[key])
+                        if (item.is_string())
+                            roots.push_back(item.get<std::string>());
             }
             ctx_.set_source_roots(std::move(roots));
             ctx_.rebuild_source_breakpoint_addresses();
@@ -305,6 +286,9 @@ public:
             try { base = fs::path(bin_path).stem().string(); }
             catch (...) { base = "listing"; }
             ctx_.set_virtual_lst_path("/__virtual__/" + base + ".asm");
+        // Build the full 64 KB disassembly listing once now so the source
+        // view and breakpoints are ready before the first step.
+        ctx_.build_full_listing();
         }
         else
         {
@@ -312,7 +296,9 @@ public:
         }
 
         z80ex_set_reg(ctx_.cpu(), regPC, entry);
-        z80ex_set_reg(ctx_.cpu(), regSP, 0x0000);
+        // Use a non-zero initial SP so signed SP comparisons in step-over/out
+        // work correctly even when the program hasn't set its own stack yet.
+        z80ex_set_reg(ctx_.cpu(), regSP, 0xFFFF);
         std::cerr << "[launch] Entry point: 0x"
                   << std::hex << entry << std::dec
                   << " (" << entry_reason << ")" << std::endl;
@@ -327,12 +313,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_launch(dbg &ctx)
 {
-    return std::make_unique<launch_handler>(ctx);
+    return make_handler<launch_handler>(ctx);
 }
 
 } // namespace handlers

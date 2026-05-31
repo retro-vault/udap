@@ -8,9 +8,9 @@
 
 namespace handlers {
 
-class pause_handler : public dap::request_handler {
+class pause_handler : public dbg_handler {
 public:
-    pause_handler(dbg &ctx) : ctx_(ctx) {}
+    using dbg_handler::dbg_handler;
     std::string command() const override { return "pause"; }
 
     std::string handle(const dap::request &req) override
@@ -21,12 +21,11 @@ public:
     }
 
 private:
-    dbg &ctx_;
 };
 
 std::unique_ptr<dap::request_handler> make_pause(dbg &ctx)
 {
-    return std::make_unique<pause_handler>(ctx);
+    return make_handler<pause_handler>(ctx);
 }
 
 } // namespace handlers

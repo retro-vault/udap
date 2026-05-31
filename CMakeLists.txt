@@ -1,7 +1,7 @@
 # Top-level CMakeLists.txt
 
 cmake_minimum_required(VERSION 3.25)
-project(mudap LANGUAGES CXX)
+project(udap LANGUAGES CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR
