@@ -12,68 +12,6 @@
 #include <deque>
 #include <z80ex_dasm.h>
 #include <dbg.h>
-#include <dap/handler.h>
-
-// Forward declarations of handler factory functions (defined in handlers/).
-namespace handlers {
-    std::unique_ptr<dap::request_handler> make_initialize(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_launch(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_configuration_done(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_threads(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_stack_trace(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_scopes(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_variables(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_continue(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_next(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_step_in(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_step_out(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_set_breakpoints(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_set_instruction_breakpoints(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_source(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_read_memory(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_disconnect(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_set_exception_breakpoints(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_pause(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_disassemble(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_set_function_breakpoints(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_breakpoint_locations(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_loaded_sources(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_evaluate(dbg &ctx);
-    std::unique_ptr<dap::request_handler> make_step_back(dbg &ctx);
-}
-
-// ---------------------------------------------------------------------------
-// Handler registration
-// ---------------------------------------------------------------------------
-
-void dbg::register_handlers(dap::dap &dispatcher)
-{
-    dispatcher.add_handler(handlers::make_initialize(*this));
-    dispatcher.add_handler(handlers::make_launch(*this));
-    dispatcher.add_handler(handlers::make_configuration_done(*this));
-    dispatcher.add_handler(handlers::make_threads(*this));
-    dispatcher.add_handler(handlers::make_stack_trace(*this));
-    dispatcher.add_handler(handlers::make_scopes(*this));
-    dispatcher.add_handler(handlers::make_variables(*this));
-    dispatcher.add_handler(handlers::make_continue(*this));
-    dispatcher.add_handler(handlers::make_next(*this));
-    dispatcher.add_handler(handlers::make_step_in(*this));
-    dispatcher.add_handler(handlers::make_step_out(*this));
-    dispatcher.add_handler(handlers::make_step_back(*this));
-    dispatcher.add_handler(handlers::make_set_breakpoints(*this));
-    dispatcher.add_handler(handlers::make_set_instruction_breakpoints(*this));
-    dispatcher.add_handler(handlers::make_source(*this));
-    dispatcher.add_handler(handlers::make_read_memory(*this));
-    dispatcher.add_handler(handlers::make_disconnect(*this));
-    dispatcher.add_handler(handlers::make_set_exception_breakpoints(*this));
-    dispatcher.add_handler(handlers::make_pause(*this));
-    dispatcher.add_handler(handlers::make_disassemble(*this));
-    dispatcher.add_handler(handlers::make_set_function_breakpoints(*this));
-    dispatcher.add_handler(handlers::make_breakpoint_locations(*this));
-    dispatcher.add_handler(handlers::make_loaded_sources(*this));
-    dispatcher.add_handler(handlers::make_evaluate(*this));
-}
-
 // ---------------------------------------------------------------------------
 // Event delivery
 // ---------------------------------------------------------------------------

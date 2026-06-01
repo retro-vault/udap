@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <dap/dap.h>
+#include "dap.h"
 #include <string>
 
 using namespace dap;
@@ -39,7 +39,7 @@ TEST(DapResponseTest, BuildSuccessResponse)
 
 TEST(DapDispatchTest, HandlerDispatch)
 {
-    dap::dap dispatcher;
+    dap::session dispatcher;
     bool called = false;
 
     // register_handler receives the full JSON message string.
@@ -61,7 +61,7 @@ TEST(DapDispatchTest, HandlerDispatch)
 
 TEST(DapDispatchTest, UnregisteredCommand)
 {
-    dap::dap dispatcher;
+    dap::session dispatcher;
     std::string msg = R"({"seq":99,"type":"request","command":"notfound","arguments":{}})";
     std::string result = dispatcher.handle_message(msg);
     json j = json::parse(result);
@@ -71,7 +71,7 @@ TEST(DapDispatchTest, UnregisteredCommand)
 
 TEST(DapTypedHandlerTest, InitializeRequestHandler)
 {
-    dap::dap dispatcher;
+    dap::session dispatcher;
 
     dispatcher.register_typed_handler<dap::initialize_request>(
         "initialize",

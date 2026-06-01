@@ -28,7 +28,7 @@
 #include <z80ex.h>       // Z80EX_CONTEXT, regXX constants, z80ex_get_reg etc.
 // z80ex_dasm.h is NOT included here; only disassemble.cpp and source.cpp
 // need it and include it directly.
-#include <dap/dap.h>
+#include <nlohmann/json.hpp>
 
 struct source_location {
     std::string file;
@@ -65,10 +65,7 @@ public:
     dbg();
     ~dbg();
 
-    // Register all handler objects with the DAP dispatcher.
-    void register_handlers(dap::dap &dispatcher);
-
-    // Event delivery: set by main, called by background threads.
+    // Event delivery: set by z80_target, called by background threads.
     void set_event_sender(std::function<void(const std::string &)> sender);
     void send_event(const std::string &event_json);
     void queue_event(std::string event_json);

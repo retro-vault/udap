@@ -24,6 +24,9 @@ target_link_libraries(udap-tests
         sdcc
 )
 
+# dap.h is internal to lib/dap; tests access it directly for white-box testing.
+target_include_directories(udap-tests PRIVATE ${CMAKE_SOURCE_DIR}/lib/dap)
+
 # Discover and register the tests for `ctest`
 include(GoogleTest)
 gtest_discover_tests(udap-tests

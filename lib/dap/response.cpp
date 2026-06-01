@@ -3,7 +3,7 @@
 //
 // Copyright 2025 Tomaz Stih. All rights reserved.
 // MIT License.
-#include "dap/dap.h"
+#include "dap.h"
 
 namespace dap
 {

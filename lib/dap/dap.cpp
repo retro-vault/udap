@@ -3,13 +3,130 @@
 //
 // Copyright 2025 Tomaz Stih. All rights reserved.
 // MIT License.
-#include <dap/dap.h>
+#include <iostream>
+#include "dap.h"
 
 namespace dap
 {
     // ---------------------------------------------------------------------------
     // request::parse — the one remaining free function not inlined in dap.h
     // ---------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Typed request constructors — JSON parsing lives here, not in the header.
+    // -------------------------------------------------------------------------
+
+    initialize_request::initialize_request(const request &b) : request(b) {
+        adapter_id  = b.arguments.value("adapterID",   "");
+        client_id   = b.arguments.value("clientID",    "");
+        client_name = b.arguments.value("clientName",  "");
+        locale      = b.arguments.value("locale",      "");
+    }
+
+    launch_request::launch_request(const request &b) : request(b) {
+        no_debug = b.arguments.value("noDebug",  false);
+        program  = b.arguments.value("program",  "");
+        cdb_file = b.arguments.value("cdbFile",  "");
+        map_file = b.arguments.value("mapFile",  "");
+    }
+
+    set_breakpoints_request::set_breakpoints_request(const request &b) : request(b) {
+        const auto &src = b.arguments.value("source", json::object());
+        if (src.contains("path"))            source_path      = src["path"].get<std::string>();
+        else if (src.contains("name"))       source_path      = src["name"].get<std::string>();
+        if (src.contains("sourceReference")) source_reference = src["sourceReference"].get<int>();
+        for (const auto &bp : b.arguments.value("breakpoints", json::array()))
+            lines.push_back(bp.value("line", 1));
+    }
+
+    stack_trace_request::stack_trace_request(const request &b) : request(b) {
+        thread_id   = b.arguments.value("threadId",   0);
+        start_frame = b.arguments.value("startFrame", 0);
+        levels      = b.arguments.value("levels",     0);
+    }
+
+    scopes_request::scopes_request(const request &b) : request(b) {
+        frame_id = b.arguments.value("frameId", 0);
+    }
+
+    variables_request::variables_request(const request &b) : request(b) {
+        variables_reference = b.arguments.value("variablesReference", 0);
+    }
+
+    continue_request::continue_request(const request &b) : request(b) {
+        thread_id = b.arguments.value("threadId", 0);
+    }
+
+    source_request::source_request(const request &b) : request(b) {
+        if (b.arguments.contains("sourceReference"))
+            source_reference = b.arguments["sourceReference"].get<int>();
+        else if (b.arguments.contains("source") &&
+                 b.arguments["source"].contains("sourceReference"))
+            source_reference = b.arguments["source"]["sourceReference"].get<int>();
+    }
+
+    read_memory_request::read_memory_request(const request &b) : request(b) {
+        if (b.arguments.contains("memoryReference")) {
+            const auto &ref = b.arguments["memoryReference"];
+            uint32_t raw = ref.is_string()
+                ? static_cast<uint32_t>(std::stoul(ref.get<std::string>(), nullptr, 0))
+                : ref.get<uint32_t>();
+            memory_reference = static_cast<uint16_t>(raw & 0xFFFF);
+        }
+        offset = b.arguments.value("offset", 0);
+        count  = b.arguments.value("count",  0);
+    }
+
+    disassemble_request::disassemble_request(const request &b) : request(b) {
+        if (b.arguments.contains("memoryReference"))
+            memory_reference = static_cast<int>(
+                std::stoul(b.arguments["memoryReference"].get<std::string>(), nullptr, 0));
+        offset             = b.arguments.value("offset",            0);
+        instruction_offset = b.arguments.value("instructionOffset", 0);
+        instruction_count  = b.arguments.value("instructionCount",  0);
+    }
+
+    breakpoint_locations_request::breakpoint_locations_request(const request &b) : request(b) {
+        source   = b.arguments.value("source",  json::object());
+        line     = b.arguments.value("line",    0);
+        end_line = b.arguments.value("endLine", 0);
+        if (end_line == 0) end_line = line;
+    }
+
+    set_function_breakpoints_request::set_function_breakpoints_request(const request &b) : request(b) {
+        breakpoints = b.arguments.value("breakpoints", std::vector<json>{});
+    }
+
+    set_instruction_breakpoints_request::set_instruction_breakpoints_request(const request &b) : request(b) {
+        breakpoints = b.arguments.value("breakpoints", std::vector<json>{});
+    }
+
+    next_request::next_request(const request &b) : request(b) {
+        thread_id = b.arguments.value("threadId", 0);
+    }
+
+    step_in_request::step_in_request(const request &b) : request(b) {
+        thread_id   = b.arguments.value("threadId",    0);
+        granularity = b.arguments.value("granularity", "");
+    }
+
+    step_out_request::step_out_request(const request &b) : request(b) {
+        thread_id   = b.arguments.value("threadId",    0);
+        granularity = b.arguments.value("granularity", "");
+    }
+
+    step_back_request::step_back_request(const request &b) : request(b) {
+        thread_id   = b.arguments.value("threadId",    0);
+        granularity = b.arguments.value("granularity", "");
+    }
+
+    evaluate_request::evaluate_request(const request &b) : request(b) {
+        expression = b.arguments.value("expression", "");
+        context    = b.arguments.value("context",    "");
+        frame_id   = b.arguments.value("frameId",    0);
+    }
+
+    // -------------------------------------------------------------------------
 
     request request::parse(const std::string &json_text)
     {
@@ -64,19 +181,19 @@ namespace dap
 
     // -----------------------------------------------------------------------
 
-    void dap::add_handler(std::unique_ptr<request_handler> handler)
+    void session::add_handler(std::unique_ptr<request_handler> handler)
     {
         std::lock_guard lock(dispatch_mutex_);
         handlers_.push_back(std::move(handler));
     }
 
-    void dap::register_handler(const std::string &command,
+    void session::register_handler(const std::string &command,
                                std::function<std::string(const std::string &)> fn)
     {
         add_handler(std::make_unique<raw_lambda_handler>(command, std::move(fn)));
     }
 
-    void dap::send_event_direct(const std::string &event_json)
+    void session::send_event_direct(const std::string &event_json)
     {
         if (!out_) return;
         std::lock_guard lock(output_mutex_);
@@ -84,7 +201,7 @@ namespace dap
               << event_json << std::flush;
     }
 
-    std::string dap::handle_message(const std::string &json_text)
+    std::string session::handle_message(const std::string &json_text)
     {
         request req;
         try {
@@ -123,7 +240,7 @@ namespace dap
         return result;
     }
 
-    std::string dap::read_message(std::istream &in)
+    std::string session::read_message(std::istream &in)
     {
         int content_length = -1;
         std::string line;
@@ -162,14 +279,14 @@ namespace dap
         return payload;
     }
 
-    void dap::send_message(std::ostream &out, const std::string &json)
+    void session::send_message(std::ostream &out, const std::string &json)
     {
         std::lock_guard lock(output_mutex_);
         out << "Content-Length: " << json.size() << "\r\n\r\n"
             << json << std::flush;
     }
 
-    void dap::run(std::istream &in, std::ostream &out)
+    void session::run(std::istream &in, std::ostream &out)
     {
         out_ = &out;
 
