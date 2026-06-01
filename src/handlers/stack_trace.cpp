@@ -21,7 +21,7 @@ public:
         nlohmann::json frame;
 
         // Try C source mapping from CDB first.
-        auto src = ctx_.has_cdb() ? ctx_.lookup_source(pc) : std::nullopt;
+        auto src = ctx_.has_cdb() ? ctx_.lookup_source_any(pc) : std::nullopt;
         if (src)
         {
             std::string name = std::filesystem::path(src->file).filename().string();
@@ -67,10 +67,11 @@ public:
                 {"memoryReference", ctx_.format_hex(pc, 4)},
                 {"instructionReference", ctx_.format_hex(pc, 4)},
                 {"source",
-                 {{"name", "z80.s"},
+                 {{"name",            "z80.s"},
+                  {"path",            ctx_.virtual_lst_path()},
                   {"sourceReference", source_ref},
                   {"presentationHint", "normal"},
-                  {"mimeType", "text/x-asm"}}},
+                  {"mimeType",        "text/x-asm"}}},
                 {"line",   pc_line},
                 {"column", 1}};
         }

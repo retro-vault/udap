@@ -36,7 +36,7 @@ public:
                      {"supportsLoadedSourcesRequest",        true},
                      {"supportsDisassembleRequest",          true},
                      {"supportsFunctionBreakpoints",         true},
-                     {"supportsStepBack",                    false},
+                     {"supportsStepBack",                    true},
                      {"supportsRestartFrame",                false},
                      {"supportsEvaluateForHovers",           true},
                      {"supportsSetVariable",                 false},

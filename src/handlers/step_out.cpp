@@ -16,6 +16,7 @@ public:
     std::string handle(const dap::request &req) override
     {
         auto r = dap::step_out_request::from(req);
+        ctx_.push_history();
 
         // Step until the current function returns.
         // entry_sp is the SP *inside* the callee (2 below the caller's SP,

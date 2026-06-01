@@ -231,6 +231,16 @@ namespace dap
         static step_out_request from(const request &r) { return step_out_request(r); }
     };
 
+    struct step_back_request : request {
+        int thread_id = 0;
+        std::string granularity;
+        explicit step_back_request(const request &b) : request(b) {
+            thread_id   = b.arguments.value("threadId",    0);
+            granularity = b.arguments.value("granularity", "");
+        }
+        static step_back_request from(const request &r) { return step_back_request(r); }
+    };
+
     struct evaluate_request : request {
         std::string expression, context;
         int frame_id = 0;

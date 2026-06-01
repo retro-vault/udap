@@ -16,33 +16,48 @@ public:
     std::string handle(const dap::request &req) override
     {
         auto r = dap::step_in_request::from(req);
-
+        ctx_.push_history();
         uint16_t start_pc  = z80ex_get_reg(ctx_.cpu(), regPC);
-        auto     start_loc = ctx_.lookup_source(start_pc);
+        auto     start_loc = ctx_.lookup_source_any(start_pc);
 
-        if (start_loc && ctx_.has_cdb()) {
-            // Source-level step-in: execute instructions until we land on a
-            // C source line that is different from the one we started on.
-            //
-            // This skips:
-            //  - call-setup code in the CALLER (instructions before the CALL
-            //    opcode that load arguments — these have no C mapping)
-            //  - function prologue in the CALLEE (PUSH instructions before
-            //    the first C-mapped statement)
-            //
-            // The loop bound is generous because each iteration is a few
-            // Z80 instructions (microseconds).
+        if (start_loc && start_loc->is_asm) {
+            // Assembly step-in: stop at next different mapped location (asm or C).
             for (int i = 0; i < 10000; ++i) {
                 ctx_.step_instruction();
                 uint16_t pc  = z80ex_get_reg(ctx_.cpu(), regPC);
-                auto     loc = ctx_.lookup_source(pc);
-                if (!loc) continue; // no C mapping here — keep going
-                // Stop when we reach any C line different from the start.
+                auto     loc = ctx_.lookup_source_any(pc);
+                if (!loc) continue;
                 if (loc->file != start_loc->file || loc->line != start_loc->line)
                     break;
             }
+        } else if (start_loc && ctx_.has_cdb()) {
+            // C source step-in: original behavior (C entries only) plus CALL detection
+            // to enter assembly functions when F11 is pressed on a CALL instruction.
+            for (int i = 0; i < 10000; ++i) {
+                uint16_t pc        = z80ex_get_reg(ctx_.cpu(), regPC);
+                uint8_t  op        = ctx_.memory()[pc];
+                int16_t  sp_before = static_cast<int16_t>(z80ex_get_reg(ctx_.cpu(), regSP));
+
+                ctx_.step_instruction();
+
+                int16_t  sp_after = static_cast<int16_t>(z80ex_get_reg(ctx_.cpu(), regSP));
+                uint16_t new_pc   = z80ex_get_reg(ctx_.cpu(), regPC);
+
+                // Stop at a different C line (original behavior).
+                auto loc = ctx_.lookup_source(new_pc);
+                if (loc && (loc->file != start_loc->file || loc->line != start_loc->line))
+                    break;
+
+                // Also stop when a CALL/RST lands us inside an assembly function.
+                if (!loc) {
+                    bool entered_call = (sp_after - sp_before == -2)
+                        && (op == 0xCD || (op & 0xC7) == 0xC4 || (op & 0xC7) == 0xC7);
+                    if (entered_call && ctx_.lookup_source_any(new_pc))
+                        break;
+                }
+            }
         } else {
-            // No C source at current PC — fall back to single instruction step.
+            // No source mapping — single instruction step.
             ctx_.step_instruction();
         }
 

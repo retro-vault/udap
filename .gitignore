@@ -1,6 +1,7 @@
 # Compilation artifacts.
 lab/
 build/
+bin/
 
 # AI.
 .claude/

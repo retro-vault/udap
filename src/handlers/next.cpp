@@ -35,23 +35,18 @@ public:
     std::string handle(const dap::request &req) override
     {
         auto r = dap::next_request::from(req);
+        ctx_.push_history();
         uint16_t start_pc = z80ex_get_reg(ctx_.cpu(), regPC);
-        auto start_loc    = ctx_.lookup_source(start_pc);
+        auto start_loc    = ctx_.lookup_source_any(start_pc);
 
-        if (start_loc) {
-            // Source-level step-over using opcode-aware call-depth tracking.
-            //
-            // The old SP-only heuristic ("if sp < start_sp we're in a nested
-            // call") was wrong: a PUSH in a function prologue also lowers SP,
-            // causing the loop to skip the entire function body until the
-            // matching POPs restore SP.
-            //
-            // Fix: pair opcode inspection with SP delta.
-            //   CALL taken → opcode is CALL/RST type AND sp decreased by 2
-            //   RET  taken → opcode is RET  type      AND sp increased by 2
-            // PUSH/POP have the same SP delta but different opcodes, so they
-            // don't affect call_depth.
+        auto step_over_loop = [&](auto should_stop) {
             int call_depth = 0;
+            // Record SP before the first step.  When the actual SP rises back
+            // to this level the callee has truly returned, regardless of whether
+            // call_depth is still > 0 (which can happen when library functions
+            // return via POP rr + JP (rr) instead of RET).
+            int16_t start_sp =
+                static_cast<int16_t>(z80ex_get_reg(ctx_.cpu(), regSP));
 
             for (int i = 0; i < 500000; ++i) {
                 uint16_t pc  = z80ex_get_reg(ctx_.cpu(), regPC);
@@ -72,15 +67,31 @@ public:
                 else if (sp_delta == 2 && is_z80_ret(op, op2) && call_depth > 0)
                     call_depth--;
 
-                if (call_depth > 0)
-                    continue; // still inside a called function
+                // If SP has returned to or above the pre-step level, the callee
+                // has exited — trust the stack over call_depth.
+                if (sp_after >= start_sp)
+                    call_depth = 0;
 
-                uint16_t new_pc = z80ex_get_reg(ctx_.cpu(), regPC);
-                auto loc = ctx_.lookup_source(new_pc);
-                if (!loc) continue;
-                if (loc->file != start_loc->file || loc->line != start_loc->line)
+                if (call_depth > 0)
+                    continue;
+
+                if (should_stop(z80ex_get_reg(ctx_.cpu(), regPC)))
                     break;
             }
+        };
+
+        if (start_loc && start_loc->is_asm) {
+            // Assembly step-over: stop at next different mapped location (asm or C).
+            step_over_loop([&](uint16_t pc) {
+                auto loc = ctx_.lookup_source_any(pc);
+                return loc && (loc->file != start_loc->file || loc->line != start_loc->line);
+            });
+        } else if (start_loc) {
+            // C source step-over: original behavior — only C entries, assembly invisible.
+            step_over_loop([&](uint16_t pc) {
+                auto loc = ctx_.lookup_source(pc);
+                return loc && (loc->file != start_loc->file || loc->line != start_loc->line);
+            });
         } else {
             // No source mapping — single instruction step.
             ctx_.step_instruction();

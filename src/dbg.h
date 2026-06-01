@@ -10,6 +10,8 @@
 // <iomanip>, <fstream>, <algorithm>, <format>) belong in the .cpp files.
 #include <string>
 #include <vector>
+#include <array>
+#include <deque>
 #include <functional>
 #include <thread>
 #include <filesystem>
@@ -31,6 +33,12 @@
 struct source_location {
     std::string file;
     int line;
+    bool is_asm = false;
+};
+
+struct cpu_snapshot {
+    std::array<Z80EX_WORD, 18> regs; // all Z80EX_REG values 0-17
+    std::vector<uint8_t>       memory;
 };
 
 struct source_content {
@@ -132,8 +140,14 @@ public:
     const std::vector<sdcc::segment> &map_segments() const { return map_segments_; }
     bool has_map() const { return !map_symbols_.empty() || !map_segments_.empty(); }
 
+    // Step-back history (one snapshot per user step press).
+    void push_history();
+    void pop_history();
+    bool can_step_back() const { return !history_.empty(); }
+
     // Source / symbol lookups (O(1) after index is built).
-    std::optional<source_location> lookup_source(uint16_t address) const;
+    std::optional<source_location> lookup_source(uint16_t address) const;     // C only
+    std::optional<source_location> lookup_source_any(uint16_t address) const; // C, then asm
     std::optional<uint16_t>        lookup_address(const std::string &file, int line) const;
     std::optional<std::string>     lookup_symbol_exact(uint16_t address) const;
     std::optional<std::string>     lookup_symbol(uint16_t address) const;
@@ -205,8 +219,13 @@ private:
     std::vector<sdcc::symbol>  map_symbols_;
     std::vector<sdcc::segment> map_segments_;
 
+    // Step-back history.
+    std::deque<cpu_snapshot> history_;
+    static constexpr size_t kMaxHistory = 1000;
+
     // Address-indexed source lookup (built by rebuild_source_index).
-    std::unordered_map<uint16_t, source_location> source_by_addr_;
+    std::unordered_map<uint16_t, source_location> source_by_addr_;     // C lines only
+    std::unordered_map<uint16_t, source_location> asm_by_addr_;        // asm lines only
     // File+line → address index.
     // key = "<filename_stem>:<line>"
     std::unordered_map<std::string, uint16_t> addr_by_file_line_;

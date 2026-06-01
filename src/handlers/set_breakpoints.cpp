@@ -18,11 +18,19 @@ public:
         auto r = dap::set_breakpoints_request::from(req);
 
         // Virtual assembly listing breakpoints.
-        // VSCode sends sourceReference > 0 (the fixed virtual listing ref)
-        // with no path, or with name = "z80.s" but still no disk path.
-        // Check: sourceReference matches the virtual listing ref.
-        if (r.source_reference > 0 &&
-            r.source_reference == ctx_.virtual_lst_source_reference()) {
+        // The virtual source has both a path (for persistent identity in VSCode)
+        // and a sourceReference (for content delivery).  Match either:
+        //  - path matches the virtual listing path, OR
+        //  - sourceReference matches the virtual listing ref
+        // The path-based match handles the common case where VSCode re-sends
+        // setBreakpoints using only the path after navigating away and back.
+        bool is_virtual_listing =
+            (!r.source_path.empty() &&
+             r.source_path == ctx_.virtual_lst_path()) ||
+            (r.source_reference > 0 &&
+             r.source_reference == ctx_.virtual_lst_source_reference());
+
+        if (is_virtual_listing) {
             nlohmann::json bps = nlohmann::json::array();
             std::vector<uint16_t> addrs;
             const auto &line_addrs = ctx_.full_listing_addrs();

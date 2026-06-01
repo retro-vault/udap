@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <format>
 #include <regex>
+#include <deque>
 #include <z80ex_dasm.h>
 #include <dbg.h>
 #include <dap/handler.h>
@@ -38,6 +39,7 @@ namespace handlers {
     std::unique_ptr<dap::request_handler> make_breakpoint_locations(dbg &ctx);
     std::unique_ptr<dap::request_handler> make_loaded_sources(dbg &ctx);
     std::unique_ptr<dap::request_handler> make_evaluate(dbg &ctx);
+    std::unique_ptr<dap::request_handler> make_step_back(dbg &ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +59,7 @@ void dbg::register_handlers(dap::dap &dispatcher)
     dispatcher.add_handler(handlers::make_next(*this));
     dispatcher.add_handler(handlers::make_step_in(*this));
     dispatcher.add_handler(handlers::make_step_out(*this));
+    dispatcher.add_handler(handlers::make_step_back(*this));
     dispatcher.add_handler(handlers::make_set_breakpoints(*this));
     dispatcher.add_handler(handlers::make_set_instruction_breakpoints(*this));
     dispatcher.add_handler(handlers::make_source(*this));
@@ -253,21 +256,57 @@ void dbg::set_map_symbols(std::vector<sdcc::symbol> symbols)
 }
 
 // ---------------------------------------------------------------------------
+// Step-back history
+// ---------------------------------------------------------------------------
+
+static const Z80_REG_T kAllRegs[] = {
+    regAF, regBC, regDE, regHL, regAF_, regBC_, regDE_, regHL_,
+    regIX, regIY, regPC, regSP, regI,   regR,   regR7,  regIM,
+    regIFF1, regIFF2
+};
+
+void dbg::push_history()
+{
+    if (history_.size() >= kMaxHistory)
+        history_.pop_front();
+    cpu_snapshot s;
+    for (int i = 0; i < 18; ++i)
+        s.regs[static_cast<size_t>(i)] = z80ex_get_reg(cpu_, kAllRegs[i]);
+    s.memory = memory_;
+    history_.push_back(std::move(s));
+}
+
+void dbg::pop_history()
+{
+    if (history_.empty()) return;
+    const auto &s = history_.back();
+    memory_ = s.memory;
+    for (int i = 0; i < 18; ++i)
+        z80ex_set_reg(cpu_, kAllRegs[i], s.regs[static_cast<size_t>(i)]);
+    history_.pop_back();
+}
+
+// ---------------------------------------------------------------------------
 // Source index (built once after CDB/MAP is loaded)
 // ---------------------------------------------------------------------------
 
 void dbg::rebuild_source_index()
 {
     source_by_addr_.clear();
+    asm_by_addr_.clear();
     addr_by_file_line_.clear();
 
-    // CDB C source lines take priority.
     for (const auto &mod : cdb_modules_) {
-        // Assembly lines: keyed by module name (= file stem without extension).
-        // Stored before C lines so C-to-address lookups win on overlap.
-        for (const auto &[line_num, addr] : mod.asm_lines) {
-            std::string key = mod.name + ":" + std::to_string(line_num);
-            addr_by_file_line_.emplace(key, addr);
+        // Assembly lines go into asm_by_addr_ only — never into source_by_addr_.
+        // This keeps the two maps disjoint so C step loops are unaffected.
+        if (!mod.asm_lines.empty()) {
+            auto resolved = resolve_source_path(mod.file);
+            std::string asm_path = resolved ? *resolved : mod.file;
+            for (const auto &[line_num, addr] : mod.asm_lines) {
+                std::string key = mod.name + ":" + std::to_string(line_num);
+                addr_by_file_line_.emplace(key, addr);
+                asm_by_addr_.emplace(addr, source_location{asm_path, line_num, true});
+            }
         }
 
         for (const auto &ln : mod.lines) {
@@ -306,6 +345,17 @@ std::optional<source_location> dbg::lookup_source(uint16_t address) const
     auto it = source_by_addr_.find(address);
     if (it != source_by_addr_.end())
         return it->second;
+    return std::nullopt;
+}
+
+std::optional<source_location> dbg::lookup_source_any(uint16_t address) const
+{
+    auto it = source_by_addr_.find(address);
+    if (it != source_by_addr_.end())
+        return it->second;
+    auto ia = asm_by_addr_.find(address);
+    if (ia != asm_by_addr_.end())
+        return ia->second;
     return std::nullopt;
 }
 
