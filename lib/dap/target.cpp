@@ -75,7 +75,7 @@ void dap::target::run(std::istream &in, std::ostream &out)
 
     std::unordered_map<std::string, int> path_to_ref;
     std::unordered_map<int, std::string> ref_to_path;
-    int next_src_ref = 1;
+    int next_src_ref = 2;  // 1 is reserved for virtual_lst_source_reference compatibility
 
     auto assign_src_ref = [&](const std::string &path) -> int {
         auto it = path_to_ref.find(path);
@@ -195,10 +195,24 @@ void dap::target::run(std::istream &in, std::ostream &out)
                 if (!f.source_path.empty()) {
                     json src;
                     src["name"]             = fs::path(f.source_path).filename().string();
-                    src["path"]             = f.source_path;
                     src["presentationHint"] = "normal";
-                    src["sourceReference"]  = fs::exists(f.source_path)
-                                              ? 0 : assign_src_ref(f.source_path);
+                    src["path"]             = f.source_path;
+
+                    // C/H source files that exist on disk: sourceReference=0 so
+                    // VSCode uses the workspace editor tab (cursor stays visible).
+                    // Assembly and off-disk files: sourceReference>0 forces
+                    // debug-virtual mode where mimeType=text/x-c enables the gutter.
+                    bool is_c_file = false;
+                    try {
+                        auto ext = fs::path(f.source_path).extension().string();
+                        is_c_file = (ext == ".c" || ext == ".h");
+                    } catch (...) {}
+
+                    if (is_c_file && fs::exists(f.source_path))
+                        src["sourceReference"] = 0;
+                    else
+                        src["sourceReference"] = assign_src_ref(f.source_path);
+
                     frame["source"] = src;
                 }
                 jframes.push_back(frame);
@@ -294,8 +308,12 @@ void dap::target::run(std::istream &in, std::ostream &out)
 
     dispatcher.register_typed_handler<dap::set_breakpoints_request>("setBreakpoints",
         [&](const dap::set_breakpoints_request &r) {
+            // If VSCode knows this source only by reference (virtual / off-disk
+            // files), it may omit the full path and send only sourceReference.
+            // Resolve the canonical path from our own map so the target always
+            // receives the same path it returned from get_stack().
             json jbps = json::array();
-            for (const auto &bp : set_source_breakpoints(r.source_path, r.lines)) {
+            for (const auto &bp : set_source_breakpoints(r.source_path, r.source_reference, r.lines)) {
                 json jbp = {{"verified", bp.verified}, {"line", bp.line}};
                 if (!bp.message.empty())      jbp["message"]              = bp.message;
                 if (bp.instruction_reference) jbp["instructionReference"] = *bp.instruction_reference;

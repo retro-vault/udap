@@ -235,15 +235,23 @@ void dbg::rebuild_source_index()
     addr_by_file_line_.clear();
 
     for (const auto &mod : cdb_modules_) {
-        // Assembly lines go into asm_by_addr_ only — never into source_by_addr_.
-        // This keeps the two maps disjoint so C step loops are unaffected.
+        // Assembly lines: only index lines for genuine assembly modules (.s/.asm).
+        // C modules also have asm_lines, but those are line numbers from the
+        // *generated* intermediate .asm file — not C source lines. Using them
+        // would create phantom sieve.c:466 mappings that break C stepping.
         if (!mod.asm_lines.empty()) {
-            auto resolved = resolve_source_path(mod.file);
-            std::string asm_path = resolved ? *resolved : mod.file;
-            for (const auto &[line_num, addr] : mod.asm_lines) {
-                std::string key = mod.name + ":" + std::to_string(line_num);
-                addr_by_file_line_.emplace(key, addr);
-                asm_by_addr_.emplace(addr, source_location{asm_path, line_num, true});
+            namespace fs = std::filesystem;
+            std::string ext;
+            try { ext = fs::path(mod.file).extension().string(); } catch (...) {}
+            bool is_asm = (ext == ".s" || ext == ".asm");
+            if (is_asm) {
+                auto resolved = resolve_source_path(mod.file);
+                std::string asm_path = resolved ? *resolved : mod.file;
+                for (const auto &[line_num, addr] : mod.asm_lines) {
+                    std::string key = mod.name + ":" + std::to_string(line_num);
+                    addr_by_file_line_.emplace(key, addr);
+                    asm_by_addr_.emplace(addr, source_location{asm_path, line_num, true});
+                }
             }
         }
 

@@ -29,7 +29,8 @@ public:
     std::vector<dap::variable_info>   get_variables(const std::string &scope)      const override;
 
     std::vector<dap::breakpoint_info> set_source_breakpoints(
-        const std::string &path, const std::vector<int> &lines)                          override;
+        const std::string &path, int source_reference,
+        const std::vector<int> &lines)                                                   override;
     std::vector<dap::breakpoint_info> set_function_breakpoints(
         const std::vector<std::string> &names)                                           override;
     std::vector<dap::breakpoint_info> set_instruction_breakpoints(

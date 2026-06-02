@@ -144,6 +144,14 @@ bool z80_target::launch(const dap::launch_args &args)
             std::cerr << "[launch] ERROR: Cannot open: " << bin_path << "\n";
         }
 
+        // Set source roots BEFORE loading CDB/MAP so that rebuild_source_index()
+        // (triggered by set_cdb_modules / set_map_symbols) resolves paths correctly.
+        std::string root = args.source_root.empty()
+            ? fs::path(bin_path).parent_path().string()
+            : args.source_root;
+        dbg_.set_source_root(root);
+        dbg_.set_source_roots(args.source_roots);
+
         fs::path cdb_path = args.cdb_file.empty()
             ? fs::path(bin_path).replace_extension(".cdb")
             : fs::path(args.cdb_file);
@@ -170,11 +178,6 @@ bool z80_target::launch(const dap::launch_args &args)
             }
         }
 
-        std::string root = args.source_root.empty()
-            ? fs::path(bin_path).parent_path().string()
-            : args.source_root;
-        dbg_.set_source_root(root);
-        dbg_.set_source_roots(args.source_roots);
         dbg_.rebuild_source_breakpoint_addresses();
 
         std::string base;
@@ -259,7 +262,17 @@ void z80_target::step()
             return loc && (loc->file != start_loc->file || loc->line != start_loc->line);
         });
     } else {
-        dbg_.step_instruction();
+        // No CDB mapping at current PC (virtual listing / unmapped epilogue).
+        // Walk forward until we find a mapped location (avoids the virtual
+        // listing flashing during function epilogue traversal) or hit a limit.
+        int16_t entry_sp = static_cast<int16_t>(z80ex_get_reg(dbg_.cpu(), regSP));
+        for (int i = 0; i < 32; ++i) {
+            dbg_.step_instruction();
+            uint16_t pc = z80ex_get_reg(dbg_.cpu(), regPC);
+            int16_t  sp = static_cast<int16_t>(z80ex_get_reg(dbg_.cpu(), regSP));
+            if (dbg_.lookup_source_any(pc)) break;  // reached a mapped location
+            if (sp > entry_sp) break;               // RET returned us to caller
+        }
     }
 }
 
@@ -434,9 +447,15 @@ std::vector<dap::variable_info> z80_target::get_variables(const std::string &sco
 // ---------------------------------------------------------------------------
 
 std::vector<dap::breakpoint_info> z80_target::set_source_breakpoints(
-    const std::string &path, const std::vector<int> &lines)
+    const std::string &path, int source_reference, const std::vector<int> &lines)
 {
-    if (path == dbg_.virtual_lst_path()) {
+    // Path check is sufficient: we always provide the full path in stackTrace
+    // (with always-assign-sourceReference), so VSCode always mirrors it back.
+    // The source_reference check is dropped because refs are assigned dynamically
+    // and may collide with virtual_lst_source_reference() for real files.
+    bool is_virtual = (!path.empty() && path == dbg_.virtual_lst_path());
+
+    if (is_virtual) {
         std::vector<dap::breakpoint_info> result;
         std::vector<uint16_t> addrs;
         const auto &line_addrs = dbg_.full_listing_addrs();
@@ -522,14 +541,11 @@ std::optional<dap::source_info> z80_target::get_source(const std::string &path) 
     std::ostringstream ss;
     ss << ifs.rdbuf();
 
-    std::string mime = "text/plain";
-    try {
-        auto ext = fs::path(real_path).extension().string();
-        if (ext == ".c" || ext == ".h")                         mime = "text/x-c";
-        else if (ext == ".s" || ext == ".asm" || ext == ".lst") mime = "text/x-asm";
-    } catch (...) {}
-
-    return dap::source_info{ss.str(), mime};
+    // Always use "text/x-c" so VSCode opens the file in C language mode.
+    // This is intentional: the C++ extension registers gutter-breakpoint support
+    // for "text/x-c" sources, but not for "text/x-asm". Without it, clicking
+    // the gutter in .s files has no effect.
+    return dap::source_info{ss.str(), "text/x-c"};
 }
 
 // ---------------------------------------------------------------------------
@@ -670,11 +686,24 @@ std::vector<dap::bp_location_info> z80_target::get_breakpoint_locations(
     std::string query_name = fs::path(path).filename().string();
     std::set<int> valid_lines;
 
-    for (const auto &mod : dbg_.cdb_modules())
+    for (const auto &mod : dbg_.cdb_modules()) {
+        // C source lines
         for (const auto &ln : mod.lines)
             if (ln.line >= line && ln.line <= end_line &&
                 fs::path(ln.file).filename().string() == query_name)
                 valid_lines.insert(ln.line);
+
+        // Assembly source lines (mod.asm_lines maps line_num → address)
+        if (!mod.asm_lines.empty()) {
+            auto resolved = dbg_.resolve_source_path(mod.file);
+            std::string asm_name = fs::path(
+                resolved ? *resolved : mod.file).filename().string();
+            if (asm_name == query_name)
+                for (const auto &[line_num, addr] : mod.asm_lines)
+                    if (line_num >= line && line_num <= end_line)
+                        valid_lines.insert(line_num);
+        }
+    }
 
     for (const auto &sym : dbg_.map_symbols()) {
         auto loc = dbg_.map_symbol_to_source(sym);

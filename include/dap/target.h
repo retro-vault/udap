@@ -105,7 +105,8 @@ public:
 
     // Breakpoints
     virtual std::vector<breakpoint_info>     set_source_breakpoints(
-        const std::string &path, const std::vector<int> &lines)                                       = 0;
+        const std::string &path, int source_reference,
+        const std::vector<int> &lines)                                                                = 0;
     virtual std::vector<breakpoint_info>     set_function_breakpoints(
         const std::vector<std::string> &names)                                    { return {}; }
     virtual std::vector<breakpoint_info>     set_instruction_breakpoints(

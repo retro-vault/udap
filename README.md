@@ -29,9 +29,9 @@ and a reusable library for adding DAP debugging to any emulator.
 
 ### Mixed C and assembly
 
-- Breakpoints in `.s` / `.asm` source files via CDB assembly line records
+- Breakpoints in `.s` / `.asm` source files with gutter support in VSCode
 - Step over transparently skips function prologues and call-setup code
-- Step into enters assembly functions from C source
+- Step into enters assembly functions from C source and back
 
 ### Register and memory inspection
 
@@ -165,4 +165,4 @@ Copyright © 2025, 2026 Tomaz Stih. All rights reserved.
 [standard.badge]: https://img.shields.io/badge/standard-C++23-blue.svg
 [license.url]:    https://github.com/tstih/libcpm3-z80/blob/main/LICENSE
 [license.badge]:  https://img.shields.io/badge/license-MIT-blue.svg
-[status.badge]:   https://img.shields.io/badge/status-stable-green.svg
+[status.badge]:   https://img.shields.io/badge/status-beta-orange.svg

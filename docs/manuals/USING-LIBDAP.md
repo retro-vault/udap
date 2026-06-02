@@ -33,13 +33,14 @@ public:
     void step_in()  override;
     void step_out() override;
 
-    std::vector<uint8_t>           read_memory(uint16_t addr, int count) const override;
-    std::vector<dap::frame_info>   get_stack()                           const override;
-    std::vector<dap::scope_info>   get_scopes()                          const override;
-    std::vector<dap::variable_info> get_variables(const std::string &scope) const override;
+    std::vector<uint8_t>             read_memory(uint16_t addr, int count)       const override;
+    std::vector<dap::frame_info>     get_stack()                                 const override;
+    std::vector<dap::scope_info>     get_scopes()                                const override;
+    std::vector<dap::variable_info>  get_variables(const std::string &scope)     const override;
 
     std::vector<dap::breakpoint_info> set_source_breakpoints(
-        const std::string &path, const std::vector<int> &lines) override;
+        const std::string &path, int source_reference,
+        const std::vector<int> &lines) override;
 
     dap::eval_info evaluate(const std::string &expr) const override;
 };
@@ -98,6 +99,12 @@ bool my_target::launch(const dap::launch_args &args) {
 | `source_root` | primary root for resolving relative source paths |
 | `source_roots` | additional search roots |
 | `start_address` | optional PC override at entry |
+
+**Important:** set `source_root`/`source_roots` in your launch implementation
+**before** parsing debug info (CDB/MAP). The debug info parser calls
+`rebuild_source_index()` immediately, and it needs the roots to resolve
+relative paths. Paths resolved at index-build time are used later for stepping
+and breakpoint matching.
 
 ### `disconnect()`
 
@@ -169,10 +176,16 @@ std::vector<dap::frame_info> my_target::get_stack() const {
 }
 ```
 
-`source_path` is the path to the source file (real or virtual). If the path
-exists on disk, VSCode opens it directly. If it does not exist (e.g. a
-generated listing), libdap assigns a `sourceReference` and requests the content
-via `get_source()`.
+`source_path` is the path to the source file (real or virtual). libdap decides
+how to present it to VSCode based on the extension:
+
+- **C/H files on disk**: `sourceReference=0` — VSCode uses the workspace editor
+  directly so the cursor stays in the familiar file tab.
+- **Assembly files (.s/.asm)**: always assigned a `sourceReference > 0` — VSCode
+  opens in debug-virtual editor mode where gutter breakpoints work regardless of
+  language mode. Content is served via `get_source()`.
+- **Virtual paths** (starting with `/__virtual__/`): assigned a `sourceReference`,
+  VSCode fetches content via `get_source()`.
 
 ### `get_scopes()`
 
@@ -211,14 +224,15 @@ std::vector<dap::variable_info> my_target::get_variables(
 `variable_info` fields: `name`, `value` (display string), `type` (optional),
 `memory_reference` (optional hex address, enables the Memory panel).
 
-### `set_source_breakpoints(path, lines)`
+### `set_source_breakpoints(path, source_reference, lines)`
 
 Store the requested breakpoints for `path`. Resolve each line number to an
 address using your debug info. Return one `breakpoint_info` per line.
 
 ```cpp
 std::vector<dap::breakpoint_info> my_target::set_source_breakpoints(
-    const std::string &path, const std::vector<int> &lines)
+    const std::string &path, int source_reference,
+    const std::vector<int> &lines)
 {
     std::vector<dap::breakpoint_info> result;
     for (int line : lines) {
@@ -234,12 +248,18 @@ std::vector<dap::breakpoint_info> my_target::set_source_breakpoints(
 }
 ```
 
+The `source_reference` parameter is provided so you can identify virtual sources
+even when VSCode sends only a reference without the full path. Virtual listing
+sources (paths starting with `/__virtual__/`) should be detected by path first;
+fall back to `source_reference` if path is ambiguous.
+
 ### `get_source(path)`
 
-Return the content of a source file. The default implementation returns
-`std::nullopt`, which causes libdap to read the file from disk. Override this
-to serve **virtual sources** — content that exists in your emulator's memory or
-is generated on the fly (e.g. a full disassembly listing).
+Return the content of a source file. The default returns `std::nullopt`, which
+causes libdap to read the file from disk.
+
+Override this to serve **virtual sources** or to handle path resolution with
+source roots:
 
 ```cpp
 std::optional<dap::source_info> my_target::get_source(
@@ -249,6 +269,62 @@ std::optional<dap::source_info> my_target::get_source(
         return dap::source_info{build_listing(), "text/x-asm"};
 
     return std::nullopt;  // let libdap read the real file
+}
+```
+
+**Gutter breakpoints in assembly files require `mimeType = "text/x-c"`.**
+When VSCode opens a source with `mimeType: "text/x-c"`, the C++ extension
+activates its breakpoint provider, enabling the gutter regardless of the file's
+actual extension. Return `"text/x-c"` for all non-virtual debug-session sources:
+
+```cpp
+std::optional<dap::source_info> my_target::get_source(
+    const std::string &path) const
+{
+    if (path.starts_with("/__virtual__/"))
+        return dap::source_info{build_listing(), "text/x-asm"};
+
+    // Resolve relative paths through source roots
+    auto real = resolve_source_path(path);
+    if (!real) return std::nullopt;
+    std::ifstream ifs(*real);
+    if (!ifs) return std::nullopt;
+    std::ostringstream ss;
+    ss << ifs.rdbuf();
+    return dap::source_info{ss.str(), "text/x-c"};  // always text/x-c
+}
+```
+
+### `get_breakpoint_locations(path, line, end_line)`
+
+Return the line numbers in `path` that can actually hold a breakpoint, within
+the range `[line, end_line]`. Used by VSCode to show or hide gutter indicators.
+
+**This must return results for assembly source files**, or VSCode will suppress
+the gutter entirely. Iterate both C source lines and assembly line records from
+your debug info:
+
+```cpp
+std::vector<dap::bp_location_info> my_target::get_breakpoint_locations(
+    const std::string &path, int line, int end_line) const
+{
+    std::string name = fs::path(path).filename().string();
+    std::set<int> valid;
+
+    // C source lines
+    for (auto &ln : c_lines_)
+        if (ln.line >= line && ln.line <= end_line &&
+            fs::path(ln.file).filename() == name)
+            valid.insert(ln.line);
+
+    // Assembly source lines (important — without these, .s gutter is disabled)
+    for (auto &[line_num, addr] : asm_lines_)
+        if (line_num >= line && line_num <= end_line)
+            valid.insert(line_num);
+
+    std::vector<dap::bp_location_info> result;
+    for (int l : valid) result.push_back({l});
+    return result;
 }
 ```
 
@@ -272,7 +348,6 @@ dap::eval_info my_target::evaluate(const std::string &expr) const {
 | `set_function_breakpoints(names)` | Break on function entry by name |
 | `set_instruction_breakpoints(refs)` | Break on raw hex addresses |
 | `disassemble(addr, offset, instr_offset, count)` | Populate the Disassembly view |
-| `get_breakpoint_locations(path, line, end_line)` | Hint which lines are breakpointable |
 | `get_loaded_sources()` | Populate the Loaded Sources panel |
 
 ---
@@ -412,6 +487,11 @@ resolve them. In `launch.json`:
 }
 ```
 
+**Set source roots before loading debug info.** If your implementation calls
+the debug-info parser inside `launch()`, configure roots first so that relative
+paths in CDB/MAP files are resolved to absolute paths at index-build time. Paths
+left unresolved at that point will not match later breakpoint or step lookups.
+
 If `get_source(path)` returns `std::nullopt` and the path cannot be found on
 disk after resolution, VSCode shows an "unavailable" placeholder.
 
@@ -437,15 +517,33 @@ std::optional<dap::source_info> my_target::get_source(
 }
 ```
 
-libdap detects that `/__virtual__/disasm.asm` does not exist on disk and
-assigns it a `sourceReference`. VSCode then requests the content over the DAP
-`source` command and displays a read-only editor tab.
+Paths starting with `/__virtual__/` are treated specially by libdap: they are
+always assigned a `sourceReference > 0` so VSCode fetches the content from the
+adapter, and they are identified as the virtual listing in `set_source_breakpoints`
+by path prefix rather than by `sourceReference` value.
+
+---
+
+## SDCC-specific: generated assembly line records
+
+If you use SDCC's CDB format, be aware that SDCC emits `A$<module>$<line>:<addr>`
+records for **every** module, including C modules. These records map line numbers
+in the **generated intermediate assembly file** (not the C source) to addresses.
+
+If you index these as source line mappings, epilogue addresses will appear to map
+to phantom C source lines (e.g. `sieve.c:466` for a file with 167 lines), causing
+the step-over loop to halt prematurely in unmapped function epilogues.
+
+**Fix:** only index `A$` (assembly) line records for modules whose source file
+has a `.s` or `.asm` extension — genuine assembly modules. Discard `A$` records
+from C (`.c`) modules entirely.
 
 ---
 
 ## Checklist
 
 - [ ] Subclass `dap::target`
+- [ ] Set `source_root`/`source_roots` **before** loading CDB/MAP
 - [ ] Implement `launch()` — load binary, initialise CPU
 - [ ] Implement `resume()` — start emulation on a background thread
 - [ ] Implement `pause()` — set an atomic flag
@@ -453,7 +551,9 @@ assigns it a `sourceReference`. VSCode then requests the content over the DAP
 - [ ] Implement `get_stack()` — return current frame with source location
 - [ ] Implement `get_scopes()` — name your variable groups
 - [ ] Implement `get_variables(scope)` — fill in values by group name
-- [ ] Implement `set_source_breakpoints()` — resolve lines → addresses
+- [ ] Implement `set_source_breakpoints(path, source_reference, lines)` — resolve lines → addresses
+- [ ] Implement `get_source(path)` — return `mimeType: "text/x-c"` for all non-virtual sources
+- [ ] Implement `get_breakpoint_locations(path, line, end_line)` — include assembly lines
 - [ ] Implement `evaluate()` — register and symbol lookups at minimum
 - [ ] Call `stopped("breakpoint")` / `stopped("pause")` from the emulation thread
 - [ ] Call `disconnect()` — join the emulation thread
