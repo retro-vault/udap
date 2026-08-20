@@ -3,7 +3,7 @@
 //
 // Copyright 2025 Tomaz Stih. All rights reserved.
 // MIT License.
-#include <format>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -418,9 +418,12 @@ void dap::target::run(std::istream &in, std::ostream &out)
                 encoded.push_back((i + 1 < len) ? b64[(n >> 6) & 0x3F] : '=');
                 encoded.push_back((i + 2 < len) ? b64[n & 0x3F] : '=');
             }
+            char address[7];
+            std::snprintf(address, sizeof(address), "0x%04X",
+                          static_cast<unsigned int>(start));
             return dap::response(r.seq, r.command)
                 .success(true)
-                .result({{"address",         std::format("0x{:04X}", start)},
+                .result({{"address",         address},
                          {"data",            encoded},
                          {"unreadableBytes", 0}})
                 .str();

@@ -44,7 +44,7 @@ std::vector<std::string_view> split(std::string_view str, char delim) {
 
 std::optional<std::vector<std::string>> match(std::string_view line,
                                                const std::regex& pattern) {
-    std::cmatch m;
+    std::match_results<std::string_view::const_iterator> m;
     if (!std::regex_match(line.begin(), line.end(), m, pattern))
         return std::nullopt;
     std::vector<std::string> groups;
